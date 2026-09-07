@@ -5,5 +5,5 @@
   "compatibility_date": "2026-09-07",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {"enabled": true,"head_sampling_rate": 1},
-  "d1_databases": [{"binding":"DB","database_name":"hometaskapp-db","migrations_dir":"migrations"}]
+  "d1_databases": [{"binding":"DB","database_name":"hometaskapp-db","database_id":"d041fcc3-9377-40fc-ac25-31fbe7d6e70b","migrations_dir":"migrations"}]
 }

@@ -1,4 +1,4 @@
-export type User = {id:string;name:string;role:'admin'|'member';active:number};
+export type User = {id:string;name:string;role:'admin'|'member';active:number;username:string};
 export type Task = {id:string;title:string;description:string;created_at:string;due_date:string;priority:'alta'|'media'|'baja';assignee_id:string|null;status:'pending'|'completed';completed_at:string|null;completed_by:string|null;recurrence:'none'|'daily'|'weekly'|'monthly';previous_id:string|null};
 export const repeats = {none:'No se repite',daily:'Cada día',weekly:'Cada semana',monthly:'Cada mes'};
 export function today() {return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
