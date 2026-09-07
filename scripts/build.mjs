@@ -1,0 +1,10 @@
+import {build} from 'esbuild';
+import {mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
+await mkdir('dist',{recursive:true});
+await build({entryPoints:['src/main.tsx'],bundle:true,minify:true,format:'esm',target:'es2022',outfile:'dist/app.js',define:{'process.env.NODE_ENV':'"production"'}});
+const assets={};
+for(const f of ['app.js','app.css'])assets['/'+f]={body:await readFile('dist/'+f,'utf8'),type:f.endsWith('css')?'text/css; charset=utf-8':'application/javascript; charset=utf-8'};
+for(const f of await readdir('public'))assets['/'+f]={body:await readFile('public/'+f,'utf8'),type:f.endsWith('html')?'text/html; charset=utf-8':f.endsWith('svg')?'image/svg+xml':f.endsWith('js')?'application/javascript':'application/manifest+json'};
+await writeFile('worker/assets.generated.ts','export const assets: Record<string,{body:string;type:string}> = '+JSON.stringify(assets)+';');
+await build({entryPoints:['worker/index.ts'],bundle:true,minify:true,format:'esm',target:'es2022',outfile:'dist/worker.js'});
+console.log('Frontend y Worker compilados.');
