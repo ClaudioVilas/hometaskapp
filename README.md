@@ -10,6 +10,7 @@ MVP para un hogar, con React + TypeScript, Cloudflare Worker y D1 SQLite. El alc
 - Avisos dentro de la app: vence hoy, atrasadas y próximos tres días.
 - Historial y estadísticas del administrador.
 - Miembros con usuario y contraseña propios, revocables. El administrador crea el acceso inicial y puede restablecer la contraseña o desactivarlo.
+- Clave personal para Atajos/Siri: cada persona la genera desde "Atajos y Siri" en la app y autentica sus pedidos con `Authorization: Bearer`, sin depender de la cookie de sesión del navegador.
 - PWA con manifiesto y aviso sin conexión. Los cambios requieren conexión; no hay sincronización offline.
 
 ## Decisiones del MVP
@@ -18,7 +19,7 @@ Un único hogar, con Claudio como administrador. El ingreso es con usuario y con
 
 Los vencimientos son fechas del calendario de Buenos Aires. La recurrencia parte del vencimiento anterior, incluso si está atrasado. Cada completado genera exactamente una próxima instancia. Mensual ajusta al último día disponible del mes siguiente; luego continúa desde esa fecha ajustada. El borrado de pendientes es lógico; el historial completado no se modifica desde la app.
 
-Los avisos push, Siri/Atajos y OpenAI quedan fuera de este hito. La capa HTTP separa las operaciones para una futura integración de lenguaje natural con permisos equivalentes.
+La clave de Atajos/Siri es una sesión de 10 años que se autentica con `Authorization: Bearer` en vez de la cookie del navegador; queda revocada al cambiar la contraseña. No verifica origen (los pedidos no vienen de un navegador), así que el atajo debe enviar el header `Origin` de la app en los pedidos que no son `GET`. Los avisos push y OpenAI quedan fuera de este hito.
 
 ## Desarrollo
 
