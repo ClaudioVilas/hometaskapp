@@ -4,7 +4,7 @@ MVP para un hogar, con React + TypeScript, Cloudflare Worker y D1 SQLite. El alc
 
 ## Incluido
 
-- Crear, editar y eliminar tareas pendientes; asignar responsable, prioridad y vencimiento.
+- Crear, editar y eliminar tareas pendientes; asignar responsable, prioridad y vencimiento. Al crear, `due_date`, `priority` y `recurrence` son opcionales (vencimiento hoy, prioridad media, sin recurrencia) para integraciones rápidas como Atajos/Siri.
 - Completar tareas con identidad de quien las hizo y fecha/hora.
 - Recurrencias diarias, semanales y mensuales: conserva cada instancia y genera la siguiente en una transacción, protegida contra doble completado.
 - Avisos dentro de la app: vence hoy, atrasadas y próximos tres días.
