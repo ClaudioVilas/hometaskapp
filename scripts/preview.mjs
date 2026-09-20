@@ -3,7 +3,9 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {randomBytes,pbkdf2Sync} from 'node:crypto';
 const mf=new Miniflare(convertV4MiniflareOptions({port:8787,host:'127.0.0.1',modules:true,scriptPath:'dist/worker.js',compatibilityDate:'2026-09-07',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'hometask-local'},d1Persist:'.wrangler/local-preview'}));
 const db=await mf.getD1Database('DB');
-for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}
+const columns=await db.prepare('PRAGMA table_info(users)').all();
+const migrations=columns.results.some(column=>column.name==='username')?['migrations/0003_shopping.sql']:['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql'];
+for(const file of migrations){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}
 await mkdir('.private',{recursive:true});
 let pass;try{pass=(await readFile('.private/local-admin-password','utf8')).trim();}catch{pass=randomBytes(9).toString('base64url');await writeFile('.private/local-admin-password',pass,{mode:0o600});}
 const salt=randomBytes(16).toString('hex'),hash=pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');

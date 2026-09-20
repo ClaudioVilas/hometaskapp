@@ -13,6 +13,14 @@ MVP para un hogar, con React + TypeScript, Cloudflare Worker y D1 SQLite. El alc
 - Clave personal para Atajos/Siri: cada persona la genera desde "Atajos y Siri" en la app y autentica sus pedidos con `Authorization: Bearer`, sin depender de la cookie de sesión del navegador.
 - PWA con manifiesto y aviso sin conexión. Los cambios requieren conexión; no hay sincronización offline.
 
+## Compras
+
+Todos los miembros pueden agregar productos con nombre obligatorio, cantidad y comentario opcionales, y una foto desde cámara o galería. El checkbox pasa el producto a Comprados y permite devolverlo a Pendientes. La navegación muestra la cantidad pendiente también en celular.
+
+La migración `0003_shopping.sql` agrega una tabla independiente en D1. Las fotos se convierten en el navegador a JPEG (hasta 1200 px y 400.000 caracteres base64); se guardan en D1 y se consultan por un endpoint autenticado, sin incluirlas en cada actualización de estado. No se admiten cambios sin conexión.
+
+El entorno `compras` publica un Worker separado y comparte la base del hogar: se usan los usuarios habituales y los productos cargados son reales. Antes de publicar: `npm run verify`, `npx wrangler d1 execute hometaskapp-db --remote --env compras --file migrations/0003_shopping.sql`, `npx wrangler deploy --env compras`. No requiere integrar la rama a `main`. Las migraciones anteriores ya fueron aplicadas manualmente en producción: no ejecutar `migrations apply` sin reconciliar primero su registro, porque `0002` reconstruye usuarios.
+
 ## Decisiones del MVP
 
 Un único hogar, con Claudio como administrador. El ingreso es con usuario y contraseña (no con enlaces de acceso): la contraseña se guarda como PBKDF2-HMAC-SHA256 (100.000 iteraciones) con salt aleatorio por usuario, nunca en texto plano. Un login válido cambia la contraseña por una cookie de sesión HttpOnly, Secure y SameSite=Strict con 30 días de vigencia. Cualquier persona puede cambiar su propia contraseña (revoca las demás sesiones de ese usuario, no la actual); el administrador puede restablecer la contraseña de un miembro o desactivar su acceso. Las contraseñas son credenciales personales: no deben publicarse ni guardarse en Git. Todavía no hay recuperación por email ni administración de múltiples hogares.
