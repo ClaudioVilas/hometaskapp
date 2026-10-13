@@ -46,3 +46,44 @@ test('shopping validates fields, payload limits, session and origin',async()=>{
  assert.equal((await request('/api/shopping','POST',{name:'Pan',photo:'x'.repeat(420001)},memberCookie)).status,413);
  const response=await mf.dispatchFetch(origin+'/api/shopping',{method:'POST',headers:{Origin:'https://other.test',Cookie:memberCookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Pan'})});assert.equal(response.status,403);
 });
+test('task privacy applies to member reads, history, direct IDs and bearer sessions',async()=>{
+ const salt=randomBytes(16).toString('hex');
+ await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind('other-member','Otro miembro','member','other-member',derive('otherpass1',salt),salt,new Date().toISOString()).run();
+ const login=await request('/api/login','POST',{username:'other-member',password:'otherpass1'},'');const otherCookie=login.headers.get('set-cookie').split(';')[0];
+ const create=async(title,assignee_id)=>{assert.equal((await request('/api/tasks','POST',{...draft,title,assignee_id})).status,201);return (await(await request('/api/state')).json()).tasks.find(t=>t.title===title);};
+ const privateTask=await create('Privada administrador','admin'),own=await create('Propia miembro','member'),other=await create('Propia otro miembro','other-member'),shared=await create('Compartida sin asignar',null);
+ for(const session of [memberCookie,otherCookie]){
+  const state=await(await request('/api/state','GET',undefined,session)).json();const expected=session===memberCookie?'member':'other-member';assert(state.tasks.every(t=>t.status==='pending'&&(t.assignee_id===expected||t.assignee_id===null)));assert(!JSON.stringify(state.tasks).includes(privateTask.title));
+  assert.equal((await request('/api/tasks/'+privateTask.id+'/complete','POST',{},session)).status,404);
+  assert.equal((await request('/api/tasks/'+privateTask.id,'PUT',{...draft,assignee_id:expected},session)).status,403);
+  assert.equal((await request('/api/tasks/'+privateTask.id,'DELETE',undefined,session)).status,403);
+ }
+ assert.equal((await request('/api/tasks/'+other.id+'/complete','POST',{},memberCookie)).status,404);
+ assert.equal((await request('/api/tasks/'+own.id+'/complete','POST',{},otherCookie)).status,404);
+ const {token}=await(await request('/api/account/token','POST',{},memberCookie)).json();const bearer=async(path,method='GET')=>mf.dispatchFetch(origin+path,{method,headers:{Authorization:'Bearer '+token,Origin:origin}});
+ assert((await(await bearer('/api/state')).json()).tasks.every(t=>t.assignee_id==='member'||t.assignee_id===null));
+ assert.equal((await bearer('/api/tasks/'+privateTask.id+'/complete','POST')).status,404);
+ // Changing ownership invalidates the old member's previously visible ID immediately.
+ assert.equal((await request('/api/tasks/'+own.id,'PUT',{...draft,title:own.title,assignee_id:'admin'})).status,200);
+ assert.equal((await request('/api/tasks/'+own.id+'/complete','POST',{},memberCookie)).status,404);
+ assert.equal((await request('/api/tasks/'+own.id+'/complete','POST',{})).status,200);
+ assert.equal((await request('/api/tasks/'+own.id+'/complete','POST',{},memberCookie)).status,404);
+ assert.equal((await request('/api/tasks/'+privateTask.id+'/complete','POST',{})).status,200);
+ assert.equal((await request('/api/tasks/'+privateTask.id+'/complete','POST',{},memberCookie)).status,404);
+ assert.equal((await request('/api/tasks/'+shared.id+'/complete','POST',{},memberCookie)).status,200);
+ // Admin retains edit, complete and delete capabilities for other members.
+ assert.equal((await request('/api/tasks/'+other.id,'PUT',{...draft,title:other.title,assignee_id:'other-member'})).status,200);
+ assert.equal((await request('/api/tasks/'+other.id+'/complete','POST',{})).status,200);
+ const state=await(await request('/api/state')).json();assert(state.tasks.some(t=>t.id===privateTask.id&&t.status==='completed'));
+ const next=state.tasks.find(t=>t.previous_id===privateTask.id);assert.equal(next.assignee_id,'admin');
+ const memberState=await(await request('/api/state','GET',undefined,memberCookie)).json();assert(memberState.tasks.every(t=>t.status==='pending'&&(t.assignee_id==='member'||t.assignee_id===null)));assert(!memberState.tasks.some(t=>t.id===next.id));
+ const nextOther=state.tasks.find(t=>t.previous_id===other.id);assert.equal((await request('/api/tasks/'+nextOther.id,'DELETE')).status,200);
+ const privateRow=await db.prepare('SELECT completed_by FROM tasks WHERE id=?').bind(privateTask.id).first();assert.equal(privateRow.completed_by,'admin');
+});
+test('reassignment between read and completion cannot bypass member permissions',async()=>{
+ const id=randomBytes(16).toString('hex');await db.prepare('INSERT INTO tasks(id,title,created_at,due_date,priority,assignee_id,recurrence) VALUES(?,?,?,?,?,?,?)').bind(id,'Reasignada durante completado',new Date().toISOString(),'2026-10-13','media','member','daily').run();
+ const {default:worker}=await import('../dist/worker.js');let reassigned=false;
+ const guardedDB={prepare(sql){const statement=db.prepare(sql);if(sql.startsWith('SELECT * FROM tasks WHERE id='))return {bind(...values){const bound=statement.bind(...values);return {async first(){const task=await bound.first();await db.prepare('UPDATE tasks SET assignee_id=? WHERE id=?').bind('admin',id).run();reassigned=true;return task;}};}};return statement;},batch:statements=>db.batch(statements)};
+ const response=await worker.fetch(new Request(origin+'/api/tasks/'+id+'/complete',{method:'POST',headers:{Origin:origin,Cookie:memberCookie}}),{DB:guardedDB});assert(reassigned);assert.equal(response.status,409);
+ const task=await db.prepare('SELECT status,assignee_id,completed_by FROM tasks WHERE id=?').bind(id).first();assert.equal(task.status,'pending');assert.equal(task.assignee_id,'admin');assert.equal(task.completed_by,null);assert.equal(await db.prepare('SELECT id FROM tasks WHERE previous_id=?').bind(id).first(),null);
+});

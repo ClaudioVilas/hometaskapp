@@ -13,6 +13,10 @@ MVP para un hogar, con React + TypeScript, Cloudflare Worker y D1 SQLite. El alc
 - Clave personal para Atajos/Siri: cada persona la genera desde "Atajos y Siri" en la app y autentica sus pedidos con `Authorization: Bearer`, sin depender de la cookie de sesión del navegador.
 - PWA con manifiesto y aviso sin conexión. Los cambios requieren conexión; no hay sincronización offline.
 
+## Privacidad de tareas
+
+El administrador ve y administra todas las tareas, incluido el historial, y puede filtrar por responsable en Tareas, Historial y Resumen. Los miembros solo reciben las tareas pendientes asignadas a su propia identidad y las que no tienen responsable; pueden completarlas, pero no editarlas, eliminarlas ni reasignarlas. Las tareas sin asignar siguen siendo compartidas. Las tareas asignadas a otra persona quedan excluidas de la respuesta de la API, y completar por ID también verifica permisos, incluso ante una reasignación concurrente. Estas reglas se aplican igualmente a sesiones del navegador y claves de Atajos/Siri; no dependen de nombres. Compras sigue compartida. No requiere migraciones.
+
 ## Compras
 
 Todos los miembros pueden agregar productos con nombre obligatorio, cantidad y comentario opcionales, y una foto desde cámara o galería. El checkbox pasa el producto a Comprados y permite devolverlo a Pendientes. La navegación muestra la cantidad pendiente también en celular.

@@ -4,3 +4,5 @@
 @media(max-width:650px){.nav{padding:8px;min-width:0}.nav b.shopping-count{display:block;position:absolute;top:0;right:0;font-size:.65rem;padding:1px 5px;border-radius:10px}}
 
 section[aria-label="Compras pendientes"] .list-heading,section[aria-label="Productos comprados"] .list-heading{margin:24px 0 16px}
+
+.assignee-filter{max-width:320px;margin:0 0 24px}
