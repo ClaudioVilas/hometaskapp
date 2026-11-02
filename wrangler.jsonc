@@ -29,6 +29,18 @@
           "migrations_dir": "migrations"
         }
       ]
+    },
+    "preview": {
+      "name": "hometaskapp-preview",
+      "workers_dev": true,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hometaskapp-preview-db",
+          "database_id": "c25b1c8b-8700-4f09-b822-983efdd6a7a9",
+          "migrations_dir": "migrations"
+        }
+      ]
     }
   }
 }

@@ -6,6 +6,8 @@ const db=await mf.getD1Database('DB');
 const columns=await db.prepare('PRAGMA table_info(users)').all();
 const migrations=columns.results.some(column=>column.name==='username')?['migrations/0003_shopping.sql']:['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql'];
 for(const file of migrations){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}
+const taskColumns=await db.prepare('PRAGMA table_info(tasks)').all();
+if(!taskColumns.results.some(column=>column.name==='category'))await db.prepare((await readFile('migrations/0004_task_category.sql','utf8')).trim()).run();
 await mkdir('.private',{recursive:true});
 let pass;try{pass=(await readFile('.private/local-admin-password','utf8')).trim();}catch{pass=randomBytes(9).toString('base64url');await writeFile('.private/local-admin-password',pass,{mode:0o600});}
 const salt=randomBytes(16).toString('hex'),hash=pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
