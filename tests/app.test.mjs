@@ -6,13 +6,13 @@ import {randomBytes,pbkdf2Sync} from 'node:crypto';
 import {build} from 'esbuild';
 await build({entryPoints:['src/domain.ts'],bundle:true,format:'esm',outfile:'dist/domain.mjs'});
 const {nextDate,daysLeft,today}=await import('../dist/domain.mjs');
-const mf=new Miniflare(convertV4MiniflareOptions({workers:[{modules:true,scriptPath:'dist/worker.js',compatibilityDate:'2026-09-07',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']}]}));
+const mf=new Miniflare(convertV4MiniflareOptions({workers:[{modules:true,scriptPath:'dist/worker.js',compatibilityDate:'2026-09-07',compatibilityFlags:['nodejs_compat'],d1Databases:['DB','LEGACY']}]}));
 let db,cookie,memberCookie;
 const origin='https://home.test';
 const request=(path,method='GET',data,session=cookie)=>mf.dispatchFetch(origin+path,{method,headers:{Origin:origin,...(session?{Cookie:session}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
 const draft={title:'Regar plantas',description:'Balcón',due_date:'2026-01-31',priority:'alta',assignee_id:'member',recurrence:'monthly'};
 const derive=(pass,salt)=>pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
-before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql','migrations/0004_task_category.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
+before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql','migrations/0004_task_category.sql','migrations/0005_lily_without_category.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
 after(()=>mf.dispose());
 test('monthly recurrence clamps leap years and year boundaries',()=>{assert.equal(nextDate('2026-01-31','monthly'),'2026-02-28');assert.equal(nextDate('2028-01-31','monthly'),'2028-02-29');assert.equal(nextDate('2026-12-31','daily'),'2027-01-01');assert.equal(nextDate('2026-12-28','weekly'),'2027-01-04');assert.equal(daysLeft('2026-09-06','2026-09-07'),-1);});
 test('anonymous cannot read tasks',async()=>assert.equal((await request('/api/state','GET',undefined,'')).status,401));
@@ -109,11 +109,42 @@ test('categories persist, validate, preserve legacy edits and survive recurrence
   assert.equal((await request('/api/tasks/'+task.id+'/complete','POST',{},memberCookie)).status,200);
   state=await(await request('/api/state')).json();assert.equal(state.tasks.find(t=>t.previous_id===task.id).category,category);
  }
- for(const category of ['bad','toString',null,3])assert.equal((await request('/api/tasks','POST',{...draft,category},session)).status,400);
+ for(const category of ['bad','toString',3])assert.equal((await request('/api/tasks','POST',{...draft,category},session)).status,400);
  assert.equal((await request('/api/tasks','POST',{...draft,category:'china'})).status,403);
  assert.equal((await request('/api/tasks','POST',{...draft,category:'china'},memberCookie)).status,403);
  const state=await(await request('/api/state')).json();const task=state.tasks.find(t=>t.category==='china'&&t.status==='pending');
  assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,category:'it'})).status,403);
  assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,category:'it'},session)).status,200);
  assert.equal((await(await request('/api/state')).json()).tasks.find(t=>t.id===task.id).category,'it');
+});
+
+test('Lily tasks have no category on create, edit, reassignment and recurrence',async()=>{
+ const salt=randomBytes(16).toString('hex');
+ await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind('lily-id','Lili','member','lily',derive('lilypass123',salt),salt,new Date().toISOString()).run();
+ const login=await request('/api/login','POST',{username:'claudio',password:'claudiopass1'},'');const session=login.headers.get('set-cookie').split(';')[0];
+ const data={...draft,title:'Tarea Lili sin categoría',assignee_id:'lily-id',category:'it'};
+ assert.equal((await request('/api/tasks','POST',data,session)).status,201);
+ const state=async()=> (await(await request('/api/state')).json()).tasks;
+ let task=(await state()).find(t=>t.title===data.title);assert.equal(task.category,null);
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...data,category:'china'},session)).status,200);assert.equal((await state()).find(t=>t.id===task.id).category,null);
+ assert.equal((await request('/api/tasks/'+task.id+'/complete','POST',{},session)).status,200);
+ const next=(await state()).find(t=>t.previous_id===task.id);assert.equal(next.category,null);assert.equal(next.assignee_id,'lily-id');
+ assert.equal((await request('/api/tasks/'+next.id,'PUT',{...data,assignee_id:'claudio',category:null},session)).status,200);assert.equal((await state()).find(t=>t.id===next.id).category,'claudio');
+ assert.equal((await request('/api/tasks/'+next.id,'PUT',data,session)).status,200);assert.equal((await state()).find(t=>t.id===next.id).category,null);
+ const {filterCategory}=await import('../dist/domain.mjs');const tasks=await state();const user={username:'claudio'};
+ assert(filterCategory(tasks,user,'all').some(t=>t.id===next.id));for(const c of ['claudio','china','it'])assert(!filterCategory(tasks,user,c).some(t=>t.id===next.id));
+});
+
+
+test('migration removes only Lily categories and preserves assignments, history and recurrence links',async()=>{
+ const legacy=await mf.getD1Database('LEGACY');
+ const apply=async file=>{const sql=await readFile(file,'utf8');await legacy.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>legacy.prepare(s)));};
+ for(const file of ['0001_initial.sql','0002_username_password.sql','0003_shopping.sql','0004_task_category.sql'])await apply('migrations/'+file);
+ for(const username of ['claudio','lily'])await legacy.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(username,username,'member',username,'hash','salt','2026-11-02').run();
+ for(const [id,assignee,previous] of [['lily-done','lily',null],['lily-next','lily','lily-done'],['claudio-task','claudio',null]])await legacy.prepare('INSERT INTO tasks(id,title,created_at,due_date,priority,assignee_id,category,previous_id,status) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,id,'2026-11-02','2026-11-02','media',assignee,'china',previous,id==='lily-done'?'completed':'pending').run();
+ const before=(await legacy.prepare('SELECT id,assignee_id,previous_id,status FROM tasks ORDER BY id').all()).results;
+ await apply('migrations/0005_lily_without_category.sql');
+ assert.deepEqual((await legacy.prepare('SELECT id,assignee_id,previous_id,status FROM tasks ORDER BY id').all()).results,before);
+ assert.equal((await legacy.prepare("SELECT category FROM tasks WHERE id='claudio-task'").first()).category,'china');
+ assert((await legacy.prepare("SELECT category FROM tasks WHERE assignee_id='lily'").all()).results.every(t=>t.category===null));
 });

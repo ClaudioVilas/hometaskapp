@@ -6,3 +6,5 @@
 section[aria-label="Compras pendientes"] .list-heading,section[aria-label="Productos comprados"] .list-heading{margin:24px 0 16px}
 
 .assignee-filter{max-width:320px;margin:0 0 24px}
+
+select:disabled{background:#edf0f5;color:#7b8598;border-color:#dce2eb;cursor:not-allowed;opacity:1}
