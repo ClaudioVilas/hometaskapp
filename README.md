@@ -78,6 +78,6 @@ Producción continúa dependiendo de `main`. Antes de fusionar esta función, ap
 
 ## Tareas de Lili sin categoría
 
-Las tareas cuyo responsable es el usuario `lily` se guardan sin categoría, incluidas las nuevas instancias recurrentes. El formulario oculta Categoría al elegirla y vuelve a habilitarla al reasignar a otra persona. En la vista de Claudio, elegir a Lili como responsable oculta e ignora el filtro de categorías; con todos los responsables, sus tareas aparecen en Todas las categorías y no dentro de una categoría específica.
+Las tareas cuyo responsable es el usuario `lily` se guardan sin categoría, incluidas las nuevas instancias recurrentes. El formulario muestra Categoría deshabilitada y grisada con “Sin categoría” al elegirla y vuelve a habilitarla al reasignar a otra persona. En la vista de Claudio, elegir a Lili como responsable oculta e ignora el filtro de categorías; con todos los responsables, sus tareas aparecen en Todas las categorías y no dentro de una categoría específica.
 
 La migración `0005_lily_without_category.sql` permite categorías nulas y quita la categoría de las tareas existentes de `lily`, sin modificar responsables, historial ni recurrencias. Antes de publicar en producción, aplicar únicamente esta migración (las anteriores ya están aplicadas). La base de prueba registra sus migraciones y puede usar `migrations apply`.
