@@ -12,7 +12,7 @@ const origin='https://home.test';
 const request=(path,method='GET',data,session=cookie)=>mf.dispatchFetch(origin+path,{method,headers:{Origin:origin,...(session?{Cookie:session}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
 const draft={title:'Regar plantas',description:'Balcón',due_date:'2026-01-31',priority:'alta',assignee_id:'member',recurrence:'monthly'};
 const derive=(pass,salt)=>pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
-before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
+before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql','migrations/0004_task_category.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
 after(()=>mf.dispose());
 test('monthly recurrence clamps leap years and year boundaries',()=>{assert.equal(nextDate('2026-01-31','monthly'),'2026-02-28');assert.equal(nextDate('2028-01-31','monthly'),'2028-02-29');assert.equal(nextDate('2026-12-31','daily'),'2027-01-01');assert.equal(nextDate('2026-12-28','weekly'),'2027-01-04');assert.equal(daysLeft('2026-09-06','2026-09-07'),-1);});
 test('anonymous cannot read tasks',async()=>assert.equal((await request('/api/state','GET',undefined,'')).status,401));
@@ -86,4 +86,34 @@ test('reassignment between read and completion cannot bypass member permissions'
  const guardedDB={prepare(sql){const statement=db.prepare(sql);if(sql.startsWith('SELECT * FROM tasks WHERE id='))return {bind(...values){const bound=statement.bind(...values);return {async first(){const task=await bound.first();await db.prepare('UPDATE tasks SET assignee_id=? WHERE id=?').bind('admin',id).run();reassigned=true;return task;}};}};return statement;},batch:statements=>db.batch(statements)};
  const response=await worker.fetch(new Request(origin+'/api/tasks/'+id+'/complete',{method:'POST',headers:{Origin:origin,Cookie:memberCookie}}),{DB:guardedDB});assert(reassigned);assert.equal(response.status,409);
  const task=await db.prepare('SELECT status,assignee_id,completed_by FROM tasks WHERE id=?').bind(id).first();assert.equal(task.status,'pending');assert.equal(task.assignee_id,'admin');assert.equal(task.completed_by,null);assert.equal(await db.prepare('SELECT id FROM tasks WHERE previous_id=?').bind(id).first(),null);
+});
+
+test('category filtering is exclusive to the authenticated Claudio username',async()=>{
+ const {filterCategory,isClaudio,categories}=await import('../dist/domain.mjs');
+ const tasks=Object.keys(categories).map(category=>({id:category,category}));
+ const claudio={id:'stable-id',username:'claudio',name:'Otro nombre',role:'admin'};
+ assert(isClaudio(claudio));
+ for(const category of Object.keys(categories))assert.deepEqual(filterCategory(tasks,claudio,category),tasks.filter(t=>t.category===category));
+ assert.deepEqual(filterCategory(tasks,claudio,'all'),tasks);
+ assert.deepEqual(filterCategory(tasks,{...claudio,username:'another',name:'Claudio'},'china'),tasks);
+});
+test('categories persist, validate, preserve legacy edits and survive recurrence',async()=>{
+ const salt=randomBytes(16).toString('hex');
+ await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind('claudio','Claudio','admin','claudio',derive('claudiopass1',salt),salt,new Date().toISOString()).run();
+ const login=await request('/api/login','POST',{username:'claudio',password:'claudiopass1'},'');const session=login.headers.get('set-cookie').split(';')[0];
+ for(const category of ['claudio','china','it']){
+  const data={...draft,title:'Categoría '+category,category};
+  assert.equal((await request('/api/tasks','POST',data,session)).status,201);
+  let state=await(await request('/api/state')).json();const task=state.tasks.find(t=>t.title===data.title);assert.equal(task.category,category);
+  assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:data.title})).status,200);
+  assert.equal((await request('/api/tasks/'+task.id+'/complete','POST',{},memberCookie)).status,200);
+  state=await(await request('/api/state')).json();assert.equal(state.tasks.find(t=>t.previous_id===task.id).category,category);
+ }
+ for(const category of ['bad','toString',null,3])assert.equal((await request('/api/tasks','POST',{...draft,category},session)).status,400);
+ assert.equal((await request('/api/tasks','POST',{...draft,category:'china'})).status,403);
+ assert.equal((await request('/api/tasks','POST',{...draft,category:'china'},memberCookie)).status,403);
+ const state=await(await request('/api/state')).json();const task=state.tasks.find(t=>t.category==='china'&&t.status==='pending');
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,category:'it'})).status,403);
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,category:'it'},session)).status,200);
+ assert.equal((await(await request('/api/state')).json()).tasks.find(t=>t.id===task.id).category,'it');
 });

@@ -54,3 +54,11 @@ El código está preparado para Cloudflare Workers y D1. El frontend se empaquet
 La app ya está publicada (`hometaskapp-db` creada, ambas migraciones aplicadas, Worker desplegado con el binding `DB` y workers.dev activo) y el acceso de Claudio ya es usuario/contraseña: **https://hometaskapp.claudiogvilas.workers.dev**
 
 Cada push a `main` despliega solo (`.github/workflows/deploy.yml`): corre `npm run verify` y, si pasa, `wrangler deploy`. Necesita los secrets `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID` configurados en GitHub (Settings → Secrets and variables → Actions del repo). No hay secretos ni contraseñas en este repositorio público.
+
+## Categorías de Claudio
+
+El usuario autenticado `claudio` ve un selector de categorías en Tareas, Historial y Resumen, con “Todas las categorías” (vista inicial), “Tareas claudio”, “China” y “Desarrollo IT”. Se combina con responsable, búsqueda y vencimientos; los totales corresponden a la categoría seleccionada. Claudio puede elegir la categoría al crear o editar una tarea. El nombre visible no habilita esta función y los demás usuarios conservan sus vistas y permisos actuales.
+
+La migración `0004_task_category.sql` agrega una columna con validación: las tareas existentes y las nuevas sin categoría explícita quedan en “Tareas claudio”. Las recurrencias conservan la categoría. Las integraciones que editan sin enviar categoría conservan la existente.
+
+Antes de desplegar esta versión, aplicar únicamente `migrations/0004_task_category.sql` a la base correspondiente y luego desplegar el código. No ejecutar todas las migraciones históricas (ver advertencia de publicación de Compras). Esta rama no aplica migraciones remotas ni despliega cambios.
