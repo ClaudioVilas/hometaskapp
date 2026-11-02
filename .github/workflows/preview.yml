@@ -2,7 +2,7 @@ name: Preview Home Task
 
 on:
   push:
-    branches: [feat/claudio-category-filter]
+    branches: [fix/lily-without-category]
   workflow_dispatch: {}
 
 concurrency:
@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   preview:
-    if: github.ref == 'refs/heads/feat/claudio-category-filter'
+    if: github.ref == 'refs/heads/fix/lily-without-category'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
