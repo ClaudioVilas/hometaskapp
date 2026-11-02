@@ -62,3 +62,15 @@ El usuario autenticado `claudio` ve un selector de categorías en Tareas, Histor
 La migración `0004_task_category.sql` agrega una columna con validación: las tareas existentes y las nuevas sin categoría explícita quedan en “Tareas claudio”. Las recurrencias conservan la categoría. Las integraciones que editan sin enviar categoría conservan la existente.
 
 Antes de desplegar esta versión, aplicar únicamente `migrations/0004_task_category.sql` a la base correspondiente y luego desplegar el código. No ejecutar todas las migraciones históricas (ver advertencia de publicación de Compras). Esta rama no aplica migraciones remotas ni despliega cambios.
+
+## Vista de prueba de categorías
+
+URL: https://hometaskapp-preview.claudiogvilas.workers.dev
+
+El entorno `preview` usa el Worker `hometaskapp-preview` y la base independiente `hometaskapp-preview-db`. Contiene usuarios y tareas ficticias; no comparte contraseñas, sesiones ni datos con producción.
+
+Cada push a `feat/claudio-category-filter` ejecuta `.github/workflows/preview.yml`: verifica el proyecto, aplica las migraciones pendientes exclusivamente a la base de prueba y despliega con `--env preview`. Reutiliza los secrets de Cloudflare del repositorio. La actualización conserva los datos de prueba.
+
+Para una instalación nueva, `node scripts/seed-preview.mjs` genera SQL y credenciales aleatorias en `.private/`. Aplicar ese SQL solamente a la base de prueba con el comando indicado en el script. No subir esos archivos a Git. Las credenciales iniciales de esta instalación se entregan por separado.
+
+Producción continúa dependiendo de `main`. Antes de fusionar esta función, aplicar únicamente la migración `0004` en producción, sin repetir las migraciones históricas. La publicación en producción queda pendiente de aprobación.
