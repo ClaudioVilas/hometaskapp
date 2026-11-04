@@ -81,3 +81,23 @@ Producción continúa dependiendo de `main`. Antes de fusionar esta función, ap
 Las tareas cuyo responsable es el usuario `lily` se guardan sin categoría, incluidas las nuevas instancias recurrentes. El formulario muestra Categoría deshabilitada y grisada con “Sin categoría” al elegirla y vuelve a habilitarla al reasignar a otra persona. En la vista de Claudio, elegir a Lili como responsable oculta e ignora el filtro de categorías; con todos los responsables, sus tareas aparecen en Todas las categorías y no dentro de una categoría específica.
 
 La migración `0005_lily_without_category.sql` permite categorías nulas y quita la categoría de las tareas existentes de `lily`, sin modificar responsables, historial ni recurrencias. Antes de publicar en producción, aplicar únicamente esta migración (las anteriores ya están aplicadas). La base de prueba registra sus migraciones y puede usar `migrations apply`.
+
+## Recordatorios por Gmail
+
+El formulario de creación y edición incluye “Recordarme por email”, desactivado por defecto. Todos los avisos van a `claudiogvilas@gmail.com`, desde esa misma cuenta. El Worker ejecuta `0 10 * * *` (10:00 UTC = 07:00 Argentina) y consulta el vencimiento vigente: solo envía para tareas pendientes, no eliminadas y con el checkbox activo. Editar la fecha cambia automáticamente el día del aviso; las próximas instancias recurrentes conservan la opción. Activar una tarea después de las 07:00 no envía un aviso retroactivo ese día.
+
+La migración `0006_email_reminders.sql` agrega la opción y un registro único por tarea y fecha. Antes de publicar, aplicar **únicamente esa migración** a producción, sin repetir migraciones anteriores. `preview` y `compras` tienen cron desactivado para evitar avisos desde entornos que comparten o prueban datos. No configurar credenciales Gmail en esos entornos.
+
+### Autorización necesaria para activar el envío
+
+La conexión de Gmail del chat no proporciona credenciales a un Worker. HomeTask requiere una autorización OAuth propia de Google con Gmail API habilitada y el permiso `https://www.googleapis.com/auth/gmail.send`, usando la cuenta `claudiogvilas@gmail.com` y acceso offline. Configurar estos tres secretos en **el Worker de producción `hometaskapp`**, por un canal seguro y sin guardarlos en Git ni pegarlos en el chat:
+
+- `GMAIL_CLIENT_ID`
+- `GMAIL_CLIENT_SECRET`
+- `GMAIL_REFRESH_TOKEN`
+
+El refresh token debe corresponder a esa cuenta y al cliente OAuth indicado. Google puede caducar en siete días los tokens de aplicaciones externas en estado Testing; preparar el consentimiento para uso permanente según las reglas de Google. No usar la contraseña habitual de Gmail. Referencias: [autorización del servidor](https://developers.google.com/workspace/gmail/api/auth/web-server), [caducidad de tokens](https://developers.google.com/identity/protocols/oauth2/), [envío de mensajes](https://developers.google.com/workspace/gmail/api/guides/sending).
+
+Si faltan credenciales o falla la autorización, el proceso falla de forma visible en logs sin marcar avisos como enviados. Cada envío se reclama de forma atómica y duradera antes de contactar a Gmail; la clave `(task_id,due_date)` evita duplicados aunque se repita el cron, se desactive/reactive el checkbox o se vuelva a una fecha ya enviada. Gmail no ofrece claves de idempotencia: un error o corte de conexión durante el envío queda como `failed` (o `sending` si se interrumpe el proceso), sin reintento automático, porque podría haberse entregado. Revisar Gmail y `task_email_deliveries` antes de cualquier recuperación manual. Un fallo de un mensaje no impide procesar los siguientes.
+
+Verificación local: `npm run verify` usa una base efímera y respuestas simuladas de Gmail; no envía correos reales. Para activar en producción faltan la autorización OAuth, la migración, el despliegue y una verificación real del envío. Esta rama no los realiza automáticamente.

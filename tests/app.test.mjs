@@ -12,7 +12,7 @@ const origin='https://home.test';
 const request=(path,method='GET',data,session=cookie)=>mf.dispatchFetch(origin+path,{method,headers:{Origin:origin,...(session?{Cookie:session}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
 const draft={title:'Regar plantas',description:'Balcón',due_date:'2026-01-31',priority:'alta',assignee_id:'member',recurrence:'monthly'};
 const derive=(pass,salt)=>pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
-before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql','migrations/0004_task_category.sql','migrations/0005_lily_without_category.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
+before(async()=>{db=await mf.getD1Database('DB');for(const file of ['migrations/0001_initial.sql','migrations/0002_username_password.sql','migrations/0003_shopping.sql','migrations/0004_task_category.sql','migrations/0005_lily_without_category.sql','migrations/0006_email_reminders.sql']){const sql=await readFile(file,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}for(const [id,role,pass] of [['admin','admin','adminpass1'],['member','member','memberpass1']]){const salt=randomBytes(16).toString('hex'),hashed=derive(pass,salt);await db.prepare('INSERT INTO users(id,name,role,username,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,id,role,id,hashed,salt,new Date().toISOString()).run();const r=await request('/api/login','POST',{username:id,password:pass},'');assert.equal(r.status,200);const c=r.headers.get('set-cookie').split(';')[0];if(role==='admin')cookie=c;else memberCookie=c;}});
 after(()=>mf.dispose());
 test('monthly recurrence clamps leap years and year boundaries',()=>{assert.equal(nextDate('2026-01-31','monthly'),'2026-02-28');assert.equal(nextDate('2028-01-31','monthly'),'2028-02-29');assert.equal(nextDate('2026-12-31','daily'),'2027-01-01');assert.equal(nextDate('2026-12-28','weekly'),'2027-01-04');assert.equal(daysLeft('2026-09-06','2026-09-07'),-1);});
 test('anonymous cannot read tasks',async()=>assert.equal((await request('/api/state','GET',undefined,'')).status,401));
@@ -147,4 +147,44 @@ test('migration removes only Lily categories and preserves assignments, history 
  assert.deepEqual((await legacy.prepare('SELECT id,assignee_id,previous_id,status FROM tasks ORDER BY id').all()).results,before);
  assert.equal((await legacy.prepare("SELECT category FROM tasks WHERE id='claudio-task'").first()).category,'china');
  assert((await legacy.prepare("SELECT category FROM tasks WHERE assignee_id='lily'").all()).results.every(t=>t.category===null));
+});
+
+test('email reminder opt-in is validated, preserved on edits and inherited by recurrence',async()=>{
+ for(const value of ['true',1,null])assert.equal((await request('/api/tasks','POST',{...draft,email_reminder:value})).status,400);
+ assert.equal((await request('/api/tasks','POST',{...draft,title:'Recordatorio recurrente',email_reminder:true})).status,201);
+ let task=(await(await request('/api/state')).json()).tasks.find(t=>t.title==='Recordatorio recurrente');assert.equal(task.email_reminder,1);
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,due_date:'2027-01-31'})).status,200);
+ task=(await(await request('/api/state')).json()).tasks.find(t=>t.id===task.id);assert.equal(task.email_reminder,1);assert.equal(task.due_date,'2027-01-31');
+ await request('/api/tasks/'+task.id+'/complete','POST',{});
+ const next=(await(await request('/api/state')).json()).tasks.find(t=>t.previous_id===task.id);assert.equal(next.email_reminder,1);assert.equal(next.due_date,'2027-02-28');
+ assert.equal((await request('/api/tasks/'+next.id,'PUT',{...draft,email_reminder:false})).status,200);
+ assert.equal((await(await request('/api/state')).json()).tasks.find(t=>t.id===next.id).email_reminder,0);
+});
+
+test('Gmail reminders respect Argentina time, opt-in, completion, edits and durable duplicate protection',async()=>{
+ await build({entryPoints:['worker/reminders.ts'],bundle:true,format:'esm',outfile:'dist/reminders.mjs'});
+ const {sendReminders}=await import('../dist/reminders.mjs');
+ const env={DB:db,GMAIL_CLIENT_ID:'test',GMAIL_CLIENT_SECRET:'test',GMAIL_REFRESH_TOKEN:'test'};
+ const create=async(id,extra={})=>{await db.prepare("INSERT INTO tasks(id,title,created_at,due_date,priority,email_reminder,status,deleted_at) VALUES(?,?,?,?,?,?,?,?)").bind(id,'Plantas 🌱 '+id,new Date().toISOString(),extra.due||'2030-04-15','media',extra.opt??1,extra.status||'pending',extra.deleted||null).run();};
+ for(const [id,extra] of [['email-ok',{}],['email-off',{opt:0}],['email-done',{status:'completed'}],['email-deleted',{deleted:'2030-04-14'}],['email-future',{due:'2030-04-16'}],['email-past',{due:'2030-04-14'}]])await create(id,extra);
+ let sends=0;const messages=[];
+ const mock=async(url,options)=>{if(url.includes('oauth2'))return Response.json({access_token:'test'});sends++;messages.push(Buffer.from(JSON.parse(options.body).raw,'base64url').toString());return Response.json({id:'gmail-id'});};
+ await sendReminders(env,Date.parse('2030-04-15T09:59:00Z'),mock);assert.equal(sends,0);
+ await Promise.all([sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),mock),sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),mock)]);assert.equal(sends,1);assert(messages[0].includes('To: claudiogvilas@gmail.com'));
+ await sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),mock);assert.equal(sends,1);
+ await db.prepare("UPDATE tasks SET due_date='2030-04-16' WHERE id='email-ok'").run();
+ await sendReminders(env,Date.parse('2030-04-16T10:00:00Z'),mock);assert.equal(sends,3); // rescheduled task plus previously future task
+ await db.prepare("UPDATE tasks SET due_date='2030-04-15' WHERE id='email-ok'").run();
+ await sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),mock);assert.equal(sends,3); // returning to an already sent date cannot duplicate
+ await create('email-concurrent-edit');
+ const editDuringAuth=async(url,options)=>{if(url.includes('oauth2')){await db.prepare("UPDATE tasks SET status='completed' WHERE id='email-concurrent-edit'").run();return Response.json({access_token:'test'});}return mock(url,options);};
+ await sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),editDuringAuth);assert.equal(sends,3);
+ await create('email-ambiguous');let attempts=0;
+ const ambiguous=async(url)=>{if(url.includes('oauth2'))return Response.json({access_token:'test'});attempts++;throw new Error('Connection lost after sending');};
+ await assert.rejects(sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),ambiguous));
+ await sendReminders(env,Date.parse('2030-04-15T10:00:00Z'),ambiguous);assert.equal(attempts,1);
+ assert.equal((await db.prepare("SELECT status FROM task_email_deliveries WHERE task_id='email-ambiguous'").first()).status,'failed');
+ await create('email-unconfigured');
+ await assert.rejects(sendReminders({DB:db},Date.parse('2030-04-15T10:00:00Z'),mock),/not configured/);
+ assert.equal(await db.prepare("SELECT task_id FROM task_email_deliveries WHERE task_id='email-unconfigured'").first(),null);
 });
