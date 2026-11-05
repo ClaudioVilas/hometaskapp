@@ -6,7 +6,7 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "triggers": {"crons": ["0 10 * * *"]},
+  "triggers": {"crons": []},
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
