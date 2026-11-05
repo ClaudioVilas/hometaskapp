@@ -150,15 +150,17 @@ test('migration removes only Lily categories and preserves assignments, history 
 });
 
 test('email reminder opt-in is validated, preserved on edits and inherited by recurrence',async()=>{
- for(const value of ['true',1,null])assert.equal((await request('/api/tasks','POST',{...draft,email_reminder:value})).status,400);
- assert.equal((await request('/api/tasks','POST',{...draft,title:'Recordatorio recurrente',email_reminder:true})).status,201);
- let task=(await(await request('/api/state')).json()).tasks.find(t=>t.title==='Recordatorio recurrente');assert.equal(task.email_reminder,1);
- assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,due_date:'2027-01-31'})).status,200);
- task=(await(await request('/api/state')).json()).tasks.find(t=>t.id===task.id);assert.equal(task.email_reminder,1);assert.equal(task.due_date,'2027-01-31');
- await request('/api/tasks/'+task.id+'/complete','POST',{});
- const next=(await(await request('/api/state')).json()).tasks.find(t=>t.previous_id===task.id);assert.equal(next.email_reminder,1);assert.equal(next.due_date,'2027-02-28');
- assert.equal((await request('/api/tasks/'+next.id,'PUT',{...draft,email_reminder:false})).status,200);
- assert.equal((await(await request('/api/state')).json()).tasks.find(t=>t.id===next.id).email_reminder,0);
+ const claudio=(await request('/api/login','POST',{username:'claudio',password:'claudiopass1'},'')).headers.get('set-cookie').split(';')[0];
+ const asClaudio=(path,method='GET',data)=>request(path,method,data,claudio);
+ for(const value of ['true',1,null])assert.equal((await asClaudio('/api/tasks','POST',{...draft,email_reminder:value})).status,400);
+ assert.equal((await asClaudio('/api/tasks','POST',{...draft,title:'Recordatorio recurrente',email_reminder:true})).status,201);
+ let task=(await(await asClaudio('/api/state')).json()).tasks.find(t=>t.title==='Recordatorio recurrente');assert.equal(task.email_reminder,1);
+ assert.equal((await asClaudio('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,due_date:'2027-01-31'})).status,200);
+ task=(await(await asClaudio('/api/state')).json()).tasks.find(t=>t.id===task.id);assert.equal(task.email_reminder,1);assert.equal(task.due_date,'2027-01-31');
+ await asClaudio('/api/tasks/'+task.id+'/complete','POST',{});
+ const next=(await(await asClaudio('/api/state')).json()).tasks.find(t=>t.previous_id===task.id);assert.equal(next.email_reminder,1);assert.equal(next.due_date,'2027-02-28');
+ assert.equal((await asClaudio('/api/tasks/'+next.id,'PUT',{...draft,email_reminder:false})).status,200);
+ assert.equal((await(await asClaudio('/api/state')).json()).tasks.find(t=>t.id===next.id).email_reminder,0);
 });
 
 test('Gmail reminders respect Argentina time, opt-in, completion, edits and durable duplicate protection',async()=>{
@@ -187,4 +189,35 @@ test('Gmail reminders respect Argentina time, opt-in, completion, edits and dura
  await create('email-unconfigured');
  await assert.rejects(sendReminders({DB:db},Date.parse('2030-04-15T10:00:00Z'),mock),/not configured/);
  assert.equal(await db.prepare("SELECT task_id FROM task_email_deliveries WHERE task_id='email-unconfigured'").first(),null);
+});
+
+test('only Claudio can configure email reminders or send a test email',async()=>{
+ const claudio=(await request('/api/login','POST',{username:'claudio',password:'claudiopass1'},'')).headers.get('set-cookie').split(';')[0];
+ // Another administrator cannot enable reminders on create or edit, through the web or a personal token.
+ assert.equal((await request('/api/tasks','POST',{...draft,title:'Otro admin',email_reminder:true})).status,403);
+ assert.equal((await request('/api/tasks','POST',{...draft,title:'Otro admin',email_reminder:false})).status,201);
+ let task=(await(await request('/api/state')).json()).tasks.find(t=>t.title==='Otro admin');assert.equal(task.email_reminder,0);
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,email_reminder:true})).status,403);
+ const token=(await(await request('/api/account/token','POST',{})).json()).token;
+ assert.equal((await mf.dispatchFetch(origin+'/api/tasks',{method:'POST',headers:{Origin:origin,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({...draft,email_reminder:true})})).status,403);
+ // Claudio enables it; another administrator editing the task keeps Claudio's choice untouched.
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,email_reminder:true},claudio)).status,200);
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:'Otro admin editado'})).status,200);
+ task=(await(await request('/api/state')).json()).tasks.find(t=>t.id===task.id);assert.equal(task.email_reminder,1);assert.equal(task.title,'Otro admin editado');
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,title:task.title,email_reminder:false})).status,403);
+ // Members never reach the configuration or test endpoints.
+ assert.equal((await request('/api/tasks/'+task.id,'PUT',{...draft,email_reminder:false},memberCookie)).status,403);
+ for(const session of [cookie,memberCookie])assert.equal((await request('/api/reminders/test','POST',{},session)).status,403);
+ // Without Gmail credentials in tests, Claudio gets a clear failure instead of a false success.
+ assert.equal((await request('/api/reminders/test','POST',{},claudio)).status,502);
+});
+
+test('Gmail test email goes only to Claudio and leaves delivery records untouched',async()=>{
+ const {sendTestReminder}=await import('../dist/reminders.mjs');
+ const before=(await db.prepare('SELECT COUNT(*) AS n FROM task_email_deliveries').first()).n;
+ const messages=[];
+ await sendTestReminder({DB:db,GMAIL_CLIENT_ID:'t',GMAIL_CLIENT_SECRET:'t',GMAIL_REFRESH_TOKEN:'t'},async(url,options)=>{if(url.includes('oauth2'))return Response.json({access_token:'t'});messages.push(Buffer.from(JSON.parse(options.body).raw,'base64url').toString());return Response.json({id:'x'});});
+ assert.equal(messages.length,1);assert(messages[0].includes('To: claudiogvilas@gmail.com'));assert(messages[0].includes('From: HomeTask <claudiogvilas@gmail.com>'));
+ await assert.rejects(sendTestReminder({DB:db,GMAIL_CLIENT_ID:'t',GMAIL_CLIENT_SECRET:'t',GMAIL_REFRESH_TOKEN:'t'},async url=>url.includes('oauth2')?Response.json({access_token:'t'}):new Response('{}',{status:403})),/403/);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM task_email_deliveries').first()).n,before);
 });

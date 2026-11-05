@@ -10,3 +10,5 @@ section[aria-label="Compras pendientes"] .list-heading,section[aria-label="Produ
 select:disabled{background:#edf0f5;color:#7b8598;border-color:#dce2eb;cursor:not-allowed;opacity:1}
 
 .reminder-option{display:flex;align-items:flex-start;gap:10px}.reminder-option input[type="checkbox"]{width:18px;height:18px;flex-shrink:0;margin:2px 0 0;accent-color:#164cdb}.reminder-option small{display:block;font-size:.75rem;font-weight:400;color:#69758a;line-height:1.5;margin-top:4px}
+
+.reminder-test{margin-top:28px;padding-top:20px;border-top:1px solid #dce2eb}.reminder-test p{color:#69758a;margin:6px 0 14px}
