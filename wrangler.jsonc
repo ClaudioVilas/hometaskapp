@@ -6,6 +6,7 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "triggers": {"crons": []},
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
@@ -21,6 +22,7 @@
   "env": {
     "compras": {
       "name": "hometaskapp-compras",
+      "triggers": {"crons": []},
       "d1_databases": [
         {
           "binding": "DB",
@@ -32,6 +34,7 @@
     },
     "preview": {
       "name": "hometaskapp-preview",
+      "triggers": {"crons": []},
       "workers_dev": true,
       "d1_databases": [
         {

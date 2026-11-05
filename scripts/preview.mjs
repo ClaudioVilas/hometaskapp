@@ -10,6 +10,7 @@ const taskColumns=await db.prepare('PRAGMA table_info(tasks)').all();
 if(!taskColumns.results.some(column=>column.name==='category'))await db.prepare((await readFile('migrations/0004_task_category.sql','utf8')).trim()).run();
 const categoryColumn=(await db.prepare('PRAGMA table_info(tasks)').all()).results.find(column=>column.name==='category');
 if(categoryColumn.notnull){const sql=await readFile('migrations/0005_lily_without_category.sql','utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}
+if(!(await db.prepare('PRAGMA table_info(tasks)').all()).results.some(column=>column.name==='email_reminder')){const sql=await readFile('migrations/0006_email_reminders.sql','utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));}
 await mkdir('.private',{recursive:true});
 let pass;try{pass=(await readFile('.private/local-admin-password','utf8')).trim();}catch{pass=randomBytes(9).toString('base64url');await writeFile('.private/local-admin-password',pass,{mode:0o600});}
 const salt=randomBytes(16).toString('hex'),hash=pbkdf2Sync(pass,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');

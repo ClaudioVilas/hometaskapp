@@ -4,7 +4,7 @@ export type Category = keyof typeof categories;
 export const isLily = (user:Pick<User,"username">|undefined) => user?.username === "lily";
 export const isClaudio = (user:User) => user.username === "claudio";
 export const filterCategory = (tasks:Task[],user:User,category:Category|"all") => tasks.filter(t=>!isClaudio(user)||category==="all"||t.category===category);
-export type Task = {category:Category|null;id:string;title:string;description:string;created_at:string;due_date:string;priority:'alta'|'media'|'baja';assignee_id:string|null;status:'pending'|'completed';completed_at:string|null;completed_by:string|null;recurrence:'none'|'daily'|'weekly'|'monthly';previous_id:string|null};
+export type Task = {email_reminder:number;category:Category|null;id:string;title:string;description:string;created_at:string;due_date:string;priority:'alta'|'media'|'baja';assignee_id:string|null;status:'pending'|'completed';completed_at:string|null;completed_by:string|null;recurrence:'none'|'daily'|'weekly'|'monthly';previous_id:string|null};
 export const repeats = {none:'No se repite',daily:'Cada día',weekly:'Cada semana',monthly:'Cada mes'};
 export function today() {return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 export function daysLeft(due:string,base=today()) {return Math.round((Date.parse(due+'T12:00:00Z')-Date.parse(base+'T12:00:00Z'))/86400000);}

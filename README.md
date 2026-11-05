@@ -81,3 +81,17 @@ Producción continúa dependiendo de `main`. Antes de fusionar esta función, ap
 Las tareas cuyo responsable es el usuario `lily` se guardan sin categoría, incluidas las nuevas instancias recurrentes. El formulario muestra Categoría deshabilitada y grisada con “Sin categoría” al elegirla y vuelve a habilitarla al reasignar a otra persona. En la vista de Claudio, elegir a Lili como responsable oculta e ignora el filtro de categorías; con todos los responsables, sus tareas aparecen en Todas las categorías y no dentro de una categoría específica.
 
 La migración `0005_lily_without_category.sql` permite categorías nulas y quita la categoría de las tareas existentes de `lily`, sin modificar responsables, historial ni recurrencias. Antes de publicar en producción, aplicar únicamente esta migración (las anteriores ya están aplicadas). La base de prueba registra sus migraciones y puede usar `migrations apply`.
+
+## Recordatorios por Gmail
+
+El formulario de creación y edición incluye “Recordarme por email”, desactivado por defecto y visible **solo para el usuario `claudio`**. La API aplica la misma regla en todos los accesos (cookie web o clave de Atajos y Siri): otro usuario que intente activar o desactivar el aviso recibe 403, y si otro administrador edita la tarea sin enviar el campo, se conserva la elección de Claudio. Editar la fecha cambia el día del aviso; las próximas instancias recurrentes conservan la opción.
+
+### Envío vigente: tarea programada de Claude
+
+Los avisos los envía una **tarea programada de Claude** («HomeTask: recordatorios por email»), todos los días a las 07:00 de Buenos Aires, usando el conector de Gmail ya autorizado con `claudiogvilas@gmail.com` (remitente y único destinatario). La tarea consulta D1 de producción y, por cada tarea pendiente, no eliminada, con el aviso activo y que vence ese día, reclama primero la fila `(task_id,due_date)` en `task_email_deliveries` como `sending`, envía y marca `sent` o `failed`. Nunca reintenta `sending` ni `failed`: revisar Gmail antes de cualquier recuperación manual. Activar el aviso después de la corrida del día no envía nada retroactivo. La migración `0006_email_reminders.sql` ya está aplicada en producción (solo esa; `d1_migrations` está vacío, **no** usar `migrations apply`).
+
+### Envío alternativo desde el Worker (inactivo)
+
+`worker/reminders.ts` contiene la misma lógica para ejecutarse desde el Worker con OAuth propio (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, permiso `gmail.send`) y el endpoint `POST /api/reminders/test`, exclusivo de Claudio. Está inactivo: el cron del Worker es `[]` en todos los entornos. Para pasar a este modo, cargar los secretos en el Worker `hometaskapp`, poner `"crons": ["0 10 * * *"]` en producción y **desactivar la tarea programada** para no duplicar avisos (la tabla de entregas igualmente evita doble envío por tarea y fecha).
+
+Verificación local: `npm run verify` usa una base efímera y respuestas simuladas de Gmail; no envía correos reales.
