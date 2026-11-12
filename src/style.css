@@ -28,3 +28,13 @@ input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
  .assignee-filter{max-width:100%}
  .search{width:150px}
 }
+/* New-task modal on iPhone: iOS date inputs have an intrinsic width that overflowed the two-column row. */
+.form-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.form-row input,.form-row select{width:100%;max-width:100%}
+input[type=date]{min-height:3.1rem;padding-top:.8rem;padding-bottom:.8rem;line-height:1.3}
+select{min-height:3.1rem}
+.modal{overflow-x:hidden;overscroll-behavior:contain}
+label>.optional{display:inline;margin-left:4px}
+label:has(>.optional){display:block}
+label:has(>.optional)>textarea{margin-top:.5rem;display:block}
+@media(max-width:650px){.form-row{gap:10px}}
